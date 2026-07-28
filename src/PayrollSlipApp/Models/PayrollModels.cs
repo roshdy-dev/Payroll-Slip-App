@@ -14,7 +14,7 @@ public class EmployeePayroll
     /// <summary>Full name of the employee.</summary>
     public string EmployeeName { get; set; } = string.Empty;
 
-    /// <summary>Department name (e.g., "Engineering", "Sales"). Used to group payslips.</summary>
+    /// <summary>Department / Payslip distribution name. Used to group payslips.</summary>
     public string Department { get; set; } = string.Empty;
 
     /// <summary>Job title or designation.</summary>
@@ -70,12 +70,12 @@ public class EmployeePayroll
 }
 
 /// <summary>
-/// Groups employees by department. One Word/PDF file is generated 
-/// per department containing all its employees' payslips.
+/// Groups employees by Payslip distribution. One Word/PDF file is generated 
+/// per distribution group containing all its employees' payslips.
 /// </summary>
 public class DepartmentGroup
 {
-    /// <summary>Department name.</summary>
+    /// <summary>Payslip distribution / department name.</summary>
     public string DepartmentName { get; set; } = string.Empty;
 
     /// <summary>All employees belonging to this department.</summary>

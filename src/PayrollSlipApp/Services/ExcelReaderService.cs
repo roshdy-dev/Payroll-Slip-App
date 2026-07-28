@@ -43,12 +43,10 @@ public class ExcelReaderService
         ["staff name"]          = nameof(EmployeePayroll.EmployeeName),
         ["emp_name_all"]        = nameof(EmployeePayroll.EmployeeName),
 
-        // ── Department columns ──
-        ["department"]              = nameof(EmployeePayroll.Department),
-        ["dept"]                    = nameof(EmployeePayroll.Department),
-        ["department name"]         = nameof(EmployeePayroll.Department),
-        ["departmentname"]          = nameof(EmployeePayroll.Department),
-        ["division"]                = nameof(EmployeePayroll.Department),
+        // ── Department / Payslip Distribution columns ──
+        // NOTE: Only "Payslip distribution" (the Excel column used for grouping payslips)
+        // maps to EmployeePayroll.Department. Generic "Department" headers are intentionally
+        // excluded to avoid conflicts when both columns exist in the same sheet.
         ["payslip distribution"]    = nameof(EmployeePayroll.Department),
         ["payslipdistribution"]     = nameof(EmployeePayroll.Department),
 
@@ -195,8 +193,8 @@ public class ExcelReaderService
 
         if (!mappedProperties.Contains(nameof(EmployeePayroll.Department)))
             throw new InvalidOperationException(
-                $"Required column 'Department' not found in the Excel header row. {allHeaders}. " +
-                "Please ensure a column header matches one of: Payslip distribution, Department, Dept, Division.");
+                $"Required column 'Payslip distribution' not found in the Excel header row. {allHeaders}. " +
+                "Please ensure a column header matches: Payslip distribution.");
 
         if (!mappedProperties.Contains(nameof(EmployeePayroll.EmployeeName)))
             throw new InvalidOperationException(
