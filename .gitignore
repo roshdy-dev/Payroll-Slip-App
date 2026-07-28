@@ -1,0 +1,23 @@
+# Build outputs
+bin/
+obj/
+publish/
+
+# IDE
+.vs/
+*.user
+*.suo
+.vscode/
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Test outputs
+test-*.docx
+test-*.pdf
+tools/
+
+# NuGet packages
+packages/
+*.nupkg

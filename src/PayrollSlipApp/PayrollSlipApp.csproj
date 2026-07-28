@@ -1,0 +1,73 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Target framework: net8.0 for broad compatibility -->
+    <TargetFramework>net8.0</TargetFramework>
+
+    <!-- 
+      OutputType: WinExe = Windows GUI app (no console window).
+      On Linux/macOS this behaves like Exe (console-less GUI).
+      CRITICAL for single-file publish to work.
+    -->
+    <OutputType>WinExe</OutputType>
+
+    <!-- Enables nullable reference type checks for safer code -->
+    <Nullable>enable</Nullable>
+
+    <!-- Use implicit usings (no need for manual System, System.Linq, etc. imports) -->
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- Application metadata -->
+    <AssemblyName>PayrollSlipGenerator</AssemblyName>
+    <RootNamespace>PayrollSlipApp</RootNamespace>
+
+    <!-- 
+      Self-contained single-file publish configuration:
+      - PublishSingleFile: bundles everything into one executable
+      - SelfContained: includes the .NET runtime (no need to install .NET)
+      - PublishTrimmed: DISABLED - Avalonia uses reflection; trimming breaks UI
+      - IncludeNativeLibrariesForSelfExtract: bundles native libs for extraction
+    -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <PublishTrimmed>false</PublishTrimmed>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+
+    <!-- Built-in COM interop (required by OpenXml on some platforms) -->
+    <EnableComHosting>false</EnableComHosting>
+  </PropertyGroup>
+
+  <!-- NuGet package references -->
+  <ItemGroup>
+    <!-- Avalonia UI - cross-platform desktop GUI framework -->
+    <PackageReference Include="Avalonia" Version="11.1.3" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.1.3" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.1.3" />
+    <!-- Avalonia font support -->
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.1.3" />
+    <!-- Avalonia diagnostics (dev tools) -->
+    <PackageReference Include="Avalonia.Diagnostics" Version="11.1.3" />
+    <!-- MVVM Community Toolkit for clean ViewModel patterns -->
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
+
+    <!-- ClosedXML - reading Excel files (.xlsx) without Excel installed -->
+    <PackageReference Include="ClosedXML" Version="0.104.2" />
+
+    <!-- DocumentFormat.OpenXml - creating Word (.docx) files -->
+    <PackageReference Include="DocumentFormat.OpenXml" Version="3.1.1" />
+    <PackageReference Include="QuestPDF" Version="2024.10.0" />
+
+    <!-- FreeSpire.Doc - DOCX-to-PDF conversion with pixel-perfect fidelity -->
+  </ItemGroup>
+
+  <!-- Include assets in output -->
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <!-- Include the Word template — copied to output for self-contained publishing -->
+  <ItemGroup>
+    <Content Include="..\..\Format Word.docx" Link="Format Word.docx" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

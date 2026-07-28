@@ -1,0 +1,230 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:PayrollSlipApp.ViewModels"
+        x:Class="PayrollSlipApp.Views.MainWindow"
+        Title="Payroll Slip Generator"
+        Width="960" Height="640"
+        MinWidth="800" MinHeight="580"
+        WindowState="Maximized"
+        WindowStartupLocation="CenterScreen"
+        Background="White">
+
+    <Design.DataContext><vm:MainViewModel/></Design.DataContext>
+
+    <Window.Styles>
+        <Style Selector="Button"><Setter Property="Cursor" Value="Hand"/></Style>
+        <Style Selector="Button.formatCard">
+            <Setter Property="Background" Value="#F8F9FA"/>
+            <Setter Property="BorderThickness" Value="2"/>
+            <Setter Property="CornerRadius" Value="12"/>
+        </Style>
+        <Style Selector="Button.formatCard:pointerover">
+            <Setter Property="Background" Value="#E8EAED"/>
+        </Style>
+        <Style Selector="Button.formatCard:disabled">
+            <Setter Property="Opacity" Value="0.4"/>
+        </Style>
+        <Style Selector="Button.primary">
+            <Setter Property="Background" Value="#1A73E8"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="CornerRadius" Value="20"/>
+            <Setter Property="Padding" Value="20,8"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style Selector="ComboBox">
+            <Setter Property="Background" Value="#F8F9FA"/>
+            <Setter Property="Foreground" Value="#202124"/>
+            <Setter Property="BorderBrush" Value="#DADCE0"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="12,6"/>
+            <Setter Property="FontSize" Value="13"/>
+        </Style>
+        <Style Selector="ComboBox:pointerover">
+            <Setter Property="BorderBrush" Value="#1A73E8"/>
+        </Style>
+    </Window.Styles>
+
+    <DockPanel>
+        <!-- TOP BAR -->
+        <Border DockPanel.Dock="Top" Background="#1A73E8" Padding="24,14">
+            <StackPanel Orientation="Horizontal" Spacing="16">
+                <StackPanel>
+                    <TextBlock Text="Payroll Slip Generator" FontSize="20" FontWeight="SemiBold" Foreground="White"/>
+                    <TextBlock Text="Upload Excel, pick month, generate payslips" FontSize="12" Foreground="#D2E3FC" Margin="0,2,0,0"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- STATUS BAR -->
+        <Border DockPanel.Dock="Bottom" Background="#F1F3F4" Padding="16,8">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Ellipse Width="8" Height="8" Fill="#34A853"/>
+                <TextBlock Text="{Binding StatusMessage}" FontSize="11" Foreground="#5F6368" VerticalAlignment="Center"/>
+            </StackPanel>
+        </Border>
+
+        <!-- MAIN -->
+        <ScrollViewer>
+            <StackPanel Spacing="12" Margin="40,16">
+
+                <!-- ROW 1: File Upload + Month/Year Picker (side by side) -->
+                <Grid ColumnDefinitions="2*,*" RowDefinitions="Auto">
+
+                    <!-- File Upload Card -->
+                    <Border Grid.Column="0" CornerRadius="16" Padding="24" Margin="0,0,12,0"
+                            Background="White" BorderBrush="#E8EAED" BorderThickness="1">
+                        <StackPanel Spacing="12">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Border Background="#E8F0FE" CornerRadius="20" Width="32" Height="32">
+                                    <TextBlock Text="1" FontSize="14" FontWeight="Bold" Foreground="#1A73E8"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <TextBlock Text="Select Excel File" FontSize="15" FontWeight="SemiBold"
+                                           Foreground="#202124" VerticalAlignment="Center"/>
+                            </StackPanel>
+
+                            <Border Name="DropZone" Background="#F8F9FA" CornerRadius="12"
+                                    BorderBrush="#DADCE0" BorderThickness="2" Padding="24,20">
+                                <StackPanel HorizontalAlignment="Center" Spacing="8">
+                                    <TextBlock Text="Drag and drop your Excel file here" FontSize="12"
+                                               Foreground="#5F6368" HorizontalAlignment="Center"/>
+                                    <TextBlock Text="or" FontSize="11" Foreground="#9AA0A6" HorizontalAlignment="Center"/>
+                                    <Button Content="Browse files" Classes="primary"
+                                            Command="{Binding BrowseFileCommand}"
+                                            IsEnabled="{Binding !IsProcessing}" HorizontalAlignment="Center"/>
+                                </StackPanel>
+                            </Border>
+
+                            <Border IsVisible="{Binding HasFile}" Background="#E8F5E9" CornerRadius="8" Padding="10,8">
+                                <Grid ColumnDefinitions="Auto,*,Auto">
+                                    <TextBlock Grid.Column="0" Text="Selected:" FontSize="11" Foreground="#1E8E3E"
+                                               VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding SelectedFileName}" FontSize="11"
+                                               Foreground="#1E8E3E" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                    <Button Grid.Column="2" Content="X" Command="{Binding ClearFileCommand}"
+                                            Background="Transparent" Foreground="#5F6368" BorderThickness="0" Padding="4" FontSize="12"/>
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Month/Year Picker Card -->
+                    <Border Grid.Column="1" CornerRadius="16" Padding="24"
+                            Background="White" BorderBrush="#E8EAED" BorderThickness="1">
+                        <StackPanel Spacing="14">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Border Background="#FFF3E0" CornerRadius="20" Width="32" Height="32">
+                                    <TextBlock Text="📅" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <TextBlock Text="Pay Period" FontSize="15" FontWeight="SemiBold"
+                                           Foreground="#202124" VerticalAlignment="Center"/>
+                            </StackPanel>
+
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Month" FontSize="12" Foreground="#5F6368"/>
+                                <ComboBox ItemsSource="{Binding MonthNames}"
+                                          SelectedIndex="{Binding SelectedMonthIndex}"
+                                          IsEnabled="{Binding !IsProcessing}"
+                                          PlaceholderText="Select month"/>
+                            </StackPanel>
+
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Year" FontSize="12" Foreground="#5F6368"/>
+                                <ComboBox ItemsSource="{Binding AvailableYears}"
+                                          SelectedItem="{Binding SelectedYear}"
+                                          IsEnabled="{Binding !IsProcessing}"
+                                          PlaceholderText="Select year"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <!-- ROW 2: Format Selection -->
+                <Border CornerRadius="16" Padding="24" Background="White" BorderBrush="#E8EAED" BorderThickness="1">
+                    <StackPanel Spacing="14">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Border Background="#E8F0FE" CornerRadius="20" Width="32" Height="32">
+                                <TextBlock Text="2" FontSize="14" FontWeight="Bold" Foreground="#1A73E8"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <TextBlock Text="Generate Payslips" FontSize="15" FontWeight="SemiBold"
+                                       Foreground="#202124" VerticalAlignment="Center"/>
+                        </StackPanel>
+
+                        <WrapPanel HorizontalAlignment="Stretch">
+                            <!-- WORD -->
+                            <Button Command="{Binding GenerateWordCommand}" IsEnabled="{Binding CanGenerate}"
+                                    Classes="formatCard" Margin="0,0,12,0" Padding="16,14" Width="200" Height="90"
+                                    BorderBrush="#1A73E8" Background="#F8FBFF">
+                                <StackPanel Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <Border Background="#1A73E8" CornerRadius="8" Width="36" Height="36" HorizontalAlignment="Center">
+                                        <TextBlock Text="W" FontSize="18" FontWeight="Black" Foreground="White"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <StackPanel HorizontalAlignment="Center" Spacing="1">
+                                        <TextBlock Text="Microsoft Word" FontSize="12" FontWeight="SemiBold" Foreground="#202124" HorizontalAlignment="Center"/>
+                                        <TextBlock Text=".docx format" FontSize="10" Foreground="#5F6368" HorizontalAlignment="Center"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Button>
+                            <!-- PDF -->
+                            <Button Command="{Binding GeneratePdfCommand}" IsEnabled="{Binding CanGenerate}"
+                                    Classes="formatCard" Margin="0,0,12,0" Padding="16,14" Width="200" Height="90"
+                                    BorderBrush="#EA4335" Background="#FFF8F7">
+                                <StackPanel Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <Border Background="#EA4335" CornerRadius="8" Width="36" Height="36" HorizontalAlignment="Center">
+                                        <TextBlock Text="PDF" FontSize="12" FontWeight="Black" Foreground="White"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <StackPanel HorizontalAlignment="Center" Spacing="1">
+                                        <TextBlock Text="PDF Document" FontSize="12" FontWeight="SemiBold" Foreground="#202124" HorizontalAlignment="Center"/>
+                                        <TextBlock Text=".pdf format" FontSize="10" Foreground="#5F6368" HorizontalAlignment="Center"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Button>
+                        </WrapPanel>
+
+                        <Border IsVisible="{Binding IsProgressVisible}">
+                            <ProgressBar Value="{Binding Progress}" Minimum="0" Maximum="100"
+                                         Height="6" CornerRadius="3" Foreground="#1A73E8" Background="#E8EAED"/>
+                        </Border>
+                    </StackPanel>
+                </Border>
+
+                <!-- ROW 3: Results + Activity Log (side by side when available) -->
+                <Border CornerRadius="16" Padding="24" Background="White" BorderBrush="#E8EAED" BorderThickness="1"
+                        IsVisible="{Binding CanOpenDirectory}">
+                    <StackPanel Spacing="10">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Border Background="#E8F5E9" CornerRadius="20" Width="32" Height="32">
+                                <TextBlock Text="3" FontSize="14" FontWeight="Bold" Foreground="#1E8E3E"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <TextBlock Text="Results Ready" FontSize="15" FontWeight="SemiBold" Foreground="#202124" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Button Content="Open output folder" Command="{Binding OpenOutputDirectoryCommand}"
+                                    Classes="primary" Background="#34A853"/>
+                            <TextBlock Text="{Binding OutputDirectory}" FontSize="11" Foreground="#9AA0A6"
+                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Activity Log -->
+                <Border CornerRadius="16" Padding="20" Background="#F8F9FA" BorderBrush="#E8EAED" BorderThickness="1">
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="Activity log" FontSize="12" FontWeight="SemiBold" Foreground="#5F6368"/>
+                        <ScrollViewer MaxHeight="80">
+                            <TextBlock Text="{Binding LogMessages}"
+                                       FontFamily="Cascadia Code, Consolas, monospace"
+                                       FontSize="10" Foreground="#3C4043" TextWrapping="Wrap"/>
+                        </ScrollViewer>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</Window>
