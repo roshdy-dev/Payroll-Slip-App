@@ -2,6 +2,16 @@
 
 A cross-platform desktop application that generates professional payslips (Word & PDF) from Excel payroll data. Built with .NET 8 and Avalonia UI — runs on **Windows, macOS, and Linux**.
 
+## 📥 Download (Windows)
+
+**[⬇️ Download PayrollSlipGenerator-v1.0.zip](https://github.com/roshdy-dev/Payroll-Slip-App/releases/latest)**
+
+1. Download the ZIP file
+2. Extract to any folder
+3. Run `PayrollSlipGenerator.exe` — no installation needed
+
+> **Note:** The ZIP includes `Format Word.docx` (the payslip template) — keep it next to the EXE. Microsoft Word must be installed for PDF generation.
+
 ## ✨ Features
 
 - 📊 **Excel Input** — Reads payroll data from `.xlsx`/`.xls` files with flexible column mapping
