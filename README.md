@@ -58,7 +58,7 @@ chmod +x publish-macos.sh
 
 The published executable in `publish/` can be copied to any machine — **no .NET runtime needed**.
 
-## 📋 Excel File Format
+## � Excel File Format
 
 The first row of the Excel file must contain column headers. The application automatically detects columns by their header names:
 
