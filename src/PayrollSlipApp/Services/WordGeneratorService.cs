@@ -188,7 +188,12 @@ public class WordGeneratorService
                 }
 
                 // Strip wrappers to get the bare placeholder name
+                var originalText = te.Text;
                 var txt = te.Text.Trim('<', '>', '\u00AB', '\u00BB').Trim();
+                var isPlaceholderToken = originalText.Contains('\u00AB')
+                    || originalText.Contains('\u00BB')
+                    || originalText.Contains('<')
+                    || originalText.Contains('>');
                 var key = ExcelReaderService.NormalizeKey(txt);
 
                 // ── Check config for PayPeriod_Month / PayPeriod_Year ──
@@ -232,7 +237,21 @@ public class WordGeneratorService
                 {
                     var dataType = fdt?.DataType?.ToLowerInvariant();
                     value = FormatValue(value, dataType);
-                    te.Text = string.IsNullOrWhiteSpace(value) ? "—" : value;
+                    var display = string.IsNullOrWhiteSpace(value) ? "—" : value;
+                    te.Text = display;
+                    te.Space = SpaceProcessingModeValues.Preserve;
+
+                    // Numbers inside the RTL template must render left-to-right,
+                    // otherwise the bidi algorithm scrambles digit/separator order
+                    // and the value looks odd/misaligned. Right-align them too.
+                    if (IsNumericText(display))
+                        SetNumericRunAlignment(run, para);
+                }
+                else if (isPlaceholderToken)
+                {
+                    // Column missing from Excel or cell empty → never leave the
+                    // literal «XXX»/<<XXX>> marker in the output document.
+                    te.Text = "—";
                     te.Space = SpaceProcessingModeValues.Preserve;
                 }
             }
@@ -242,10 +261,20 @@ public class WordGeneratorService
     private bool ShouldRemoveRow(TableRow row, Dictionary<string, string> rawData)
     {
         var suppressionChecks = new List<bool>();
+        var hasValuePlaceholder = false;
 
         foreach (var text in row.Descendants<Text>())
         {
-            var placeholder = text.Text.Trim('<', '>', '\u00AB', '\u00BB').Trim();
+            var raw = text.Text;
+
+            // Only treat wrapped tokens (e.g. «Bonus», <<Bonus>>) as value placeholders.
+            // Plain label text (Arabic captions, titles) must never trigger row removal.
+            bool isWrapped = raw.Contains('\u00AB') || raw.Contains('\u00BB')
+                          || raw.Contains('<') || raw.Contains('>');
+            if (!isWrapped)
+                continue;
+
+            var placeholder = raw.Trim('<', '>', '\u00AB', '\u00BB').Trim();
             if (string.IsNullOrWhiteSpace(placeholder))
                 continue;
 
@@ -256,16 +285,26 @@ public class WordGeneratorService
             _formatTypeMap.TryGetValue(key, out var fdt);
             var dataType = fdt?.DataType?.ToLowerInvariant();
 
+            // Month/Year are part of the title row — never suppress that row.
             if (dataType == "payperiod_month" || dataType == "payperiod_year")
                 continue;
 
+            hasValuePlaceholder = true;
+
+            // Column missing from Excel OR the cell is empty (empty cells are not
+            // stored in RawData) → treat as zero/empty and remove the row.
             if (!rawData.TryGetValue(key, out var rawValue))
+            {
+                suppressionChecks.Add(true);
                 continue;
+            }
 
             suppressionChecks.Add(ShouldSuppressRowValue(rawValue));
         }
 
-        return suppressionChecks.Count > 0 && suppressionChecks.All(x => x);
+        return hasValuePlaceholder
+            && suppressionChecks.Count > 0
+            && suppressionChecks.All(x => x);
     }
 
     private static bool ShouldSuppressRowValue(string rawValue)
@@ -278,6 +317,51 @@ public class WordGeneratorService
             System.Globalization.CultureInfo.InvariantCulture,
             out var numericValue)
             && numericValue == 0;
+    }
+
+    /// <summary>
+    /// Returns true when the display text is a number (digits, separators, signs).
+    /// "—" and other non-numeric strings return false.
+    /// </summary>
+    private static bool IsNumericText(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text) || text == "—")
+            return false;
+
+        // Strip thousands separators (e.g. "7,409.00" → "7409.00") then parse.
+        var compact = text.Replace(",", string.Empty).Trim();
+        return decimal.TryParse(compact,
+            System.Globalization.NumberStyles.Any,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out _);
+    }
+
+    /// <summary>
+    /// Forces a numeric value run to render left-to-right and right-aligned,
+    /// overriding the template's RTL paragraph-mark run properties so that
+    /// digit/separator order stays correct inside the Arabic document.
+    /// </summary>
+    private static void SetNumericRunAlignment(Run run, Paragraph para)
+    {
+        // Run-level override: <w:rtl w:val="false"/> (RightToLeftText in the SDK)
+        var rPr = run.GetFirstChild<RunProperties>();
+        if (rPr == null)
+        {
+            rPr = new RunProperties();
+            run.InsertAt(rPr, 0);
+        }
+        rPr.RemoveAllChildren<RightToLeftText>();
+        rPr.Append(new RightToLeftText { Val = false });
+
+        // Right-align the paragraph so numbers line up neatly in their column.
+        var pPr = para.GetFirstChild<ParagraphProperties>();
+        if (pPr == null)
+        {
+            pPr = new ParagraphProperties();
+            para.InsertAt(pPr, 0);
+        }
+        pPr.RemoveAllChildren<Justification>();
+        pPr.Append(new Justification { Val = JustificationValues.Right });
     }
 
     /// <summary>
