@@ -67,7 +67,12 @@
 
   <!-- Include the Word template — copied to output for self-contained publishing -->
   <ItemGroup>
-    <Content Include="..\..\Format Word.docx" Link="Format Word.docx" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\Word_Format.docx" Link="Word_Format.docx" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- Include AppConfig.json — copied to output for self-contained publishing -->
+  <ItemGroup>
+    <Content Include="..\..\AppConfig.json" Link="AppConfig.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

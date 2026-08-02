@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -17,6 +18,7 @@ public partial class MainViewModel : ViewModelBase
     private readonly ExcelReaderService _excelReader;
     private readonly WordGeneratorService _wordGenerator;
     private readonly PdfGeneratorService _pdfGenerator;
+    private readonly AppConfig _appConfig;
 
     [ObservableProperty]
     private string _selectedFilePath = string.Empty;
@@ -102,14 +104,60 @@ public partial class MainViewModel : ViewModelBase
     public MainViewModel()
     {
         _excelReader = new ExcelReaderService();
-        _wordGenerator = new WordGeneratorService();
-        _pdfGenerator = new PdfGeneratorService();
+        _appConfig = LoadAppConfig();
+        _wordGenerator = new WordGeneratorService(_appConfig);
+        _pdfGenerator = new PdfGeneratorService(_appConfig);
 
         // Populate years: current year and 5 past years
         var now = DateTime.Now;
         AvailableYears = Enumerable.Range(now.Year - 5, 6).Reverse().ToList();
         SelectedYear = now.Year;
         RefreshMonthList();
+    }
+
+    /// <summary>
+    /// Loads AppConfig.json from next to the executable, or from the project root during development.
+    /// Falls back to default settings if the file is missing or malformed.
+    /// </summary>
+    private static AppConfig LoadAppConfig()
+    {
+        // Resolve config path dynamically (same strategy as WordGeneratorService.TemplatePath)
+        var exeDir = AppDomain.CurrentDomain.BaseDirectory;
+        var localConfig = Path.Combine(exeDir, "AppConfig.json");
+        var projectConfig = @"D:\Payroll Slip App\AppConfig.json";
+
+        string? configPath = null;
+        if (File.Exists(localConfig))
+            configPath = localConfig;
+        else if (File.Exists(projectConfig))
+            configPath = projectConfig;
+
+        if (configPath == null)
+        {
+            System.Diagnostics.Debug.WriteLine("[MainViewModel] AppConfig.json not found, using defaults.");
+            return new AppConfig();
+        }
+
+        try
+        {
+            var json = File.ReadAllText(configPath);
+            var config = JsonSerializer.Deserialize<AppConfig>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            if (config != null && !string.IsNullOrWhiteSpace(config.ColumnSeparator))
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[MainViewModel] Loaded AppConfig: ColumnSeparator='{config.ColumnSeparator}'");
+                return config;
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[MainViewModel] Failed to parse AppConfig.json: {ex.Message}");
+        }
+
+        return new AppConfig();
     }
 
     /// <summary>
@@ -321,9 +369,11 @@ public partial class MainViewModel : ViewModelBase
                     return;
                 }
 
-                // ── Step 2: Group by department (25%) ──
+                // ── Step 2: Group by the configured column separator (25%) ──
                 UpdateProgress(25);
-                var departments = _excelReader.GroupByDepartment(employees);
+                var separator = _appConfig.ColumnSeparator;
+                AppendLog($"📊 Grouping by column: '{separator}'");
+                var departments = _excelReader.GroupByColumn(employees, separator);
                 AppendLog($"📊 Found {departments.Count} department(s):");
                 foreach (var dept in departments)
                 {

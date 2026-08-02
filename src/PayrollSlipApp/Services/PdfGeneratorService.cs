@@ -28,6 +28,13 @@ public class PdfGeneratorService
     /// <summary>Max concurrent Word COM instances. Higher = faster but more RAM.</summary>
     private const int MaxWordInstances = 4;
 
+    private readonly AppConfig _config;
+
+    public PdfGeneratorService(AppConfig config)
+    {
+        _config = config;
+    }
+
     static PdfGeneratorService() { QuestPDF.Settings.License = LicenseType.Community; }
 
     public List<string> GeneratePdfDocuments(List<DepartmentGroup> groups, string outputDir)
@@ -38,7 +45,7 @@ public class PdfGeneratorService
         var wordFiles = new ConcurrentBag<string>();
         Parallel.ForEach(groups, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, dept =>
         {
-            var wordGen = new WordGeneratorService();
+            var wordGen = new WordGeneratorService(_config);
             var files = wordGen.GenerateWordDocuments(new List<DepartmentGroup> { dept }, outputDir);
             foreach (var f in files) wordFiles.Add(f);
         });

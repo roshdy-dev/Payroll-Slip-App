@@ -148,8 +148,8 @@ public class ExcelReaderService
         // Open the workbook in read-only mode for performance
         using var workbook = new XLWorkbook(filePath);
 
-        // Use the first worksheet in the workbook
-        var worksheet = workbook.Worksheets.First();
+        // Find the worksheet that contains data headers (not the template/layout sheet)
+        var worksheet = FindDataWorksheet(workbook);
 
         // --- Step 1: Read the header row (row 1) ---
         // Build a mapping: ColumnIndex -> PropertyName
@@ -190,11 +190,6 @@ public class ExcelReaderService
             throw new InvalidOperationException(
                 $"Required column 'Employee ID' not found in the Excel header row. {allHeaders}. " +
                 "Please ensure a column header matches one of: EMP_HR_CODE, EmployeeID, Emp ID, Staff ID, Code.");
-
-        if (!mappedProperties.Contains(nameof(EmployeePayroll.Department)))
-            throw new InvalidOperationException(
-                $"Required column 'Payslip distribution' not found in the Excel header row. {allHeaders}. " +
-                "Please ensure a column header matches: Payslip distribution.");
 
         if (!mappedProperties.Contains(nameof(EmployeePayroll.EmployeeName)))
             throw new InvalidOperationException(
@@ -257,6 +252,44 @@ public class ExcelReaderService
     }
 
     /// <summary>
+    /// Finds the worksheet that contains actual payroll data headers.
+    /// Scans sheets in order, looking for the first sheet whose row 1 contains
+    /// at least one recognized Employee ID column header.
+    /// Falls back to the first worksheet if no data sheet is detected.
+    /// </summary>
+    private static IXLWorksheet FindDataWorksheet(XLWorkbook workbook)
+    {
+        // Known Employee ID header patterns (same as ColumnMappings for employeeid)
+        var idHeaders = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "employeeid", "employee id", "emp id", "empid", "payroll number",
+            "staff id", "code", "emp_hr_code", "hr code", "hrcode", "ora code"
+        };
+
+        foreach (var ws in workbook.Worksheets)
+        {
+            var headerRow = ws.Row(1);
+            var lastCol = headerRow.LastCellUsed()?.Address.ColumnNumber ?? 0;
+
+            for (int col = 1; col <= lastCol; col++)
+            {
+                var headerText = headerRow.Cell(col).GetString().Trim();
+                if (!string.IsNullOrWhiteSpace(headerText) && idHeaders.Contains(headerText))
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[ExcelReader] Using sheet '{ws.Name}' (found ID header '{headerText}' at col {col}).");
+                    return ws;
+                }
+            }
+        }
+
+        // Fallback: use the first worksheet
+        System.Diagnostics.Debug.WriteLine(
+            "[ExcelReader] No data sheet detected by headers, falling back to first worksheet.");
+        return workbook.Worksheets.First();
+    }
+
+    /// <summary>
     /// Returns a default pay period string in Arabic (e.g., "يوليو 2026").
     /// </summary>
     private static string GetDefaultPayPeriod()
@@ -279,13 +312,72 @@ public class ExcelReaderService
 
     /// <summary>
     /// Groups employees by their Department property.
+    /// Uses the same logic as GroupByColumn with "Payslip distribution".
     /// </summary>
     /// <param name="employees">Flat list of employees.</param>
     /// <returns>List of DepartmentGroup, one per unique department.</returns>
     public List<DepartmentGroup> GroupByDepartment(List<EmployeePayroll> employees)
     {
+        return GroupByColumn(employees, "Payslip distribution");
+    }
+
+    /// <summary>
+    /// Groups employees by the value of a specific Excel column (from RawData).
+    /// Each unique value in that column becomes its own output group (Word/PDF file).
+    /// 
+    /// The column name is normalized (lowercase, letters+digits only) before lookup
+    /// in RawData, matching how ExcelReaderService stores headers.
+    /// </summary>
+    /// <param name="employees">Flat list of employees with RawData populated.</param>
+    /// <param name="columnHeader">
+    /// Exact Excel column header name to group by (e.g., "Payslip distribution", "Company", "Department").
+    /// Case-insensitive, spaces/punctuation are stripped for matching.
+    /// </param>
+    /// <returns>List of DepartmentGroup, one per unique column value.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the specified column is not found in any employee's RawData.
+    /// </exception>
+    public List<DepartmentGroup> GroupByColumn(List<EmployeePayroll> employees, string columnHeader)
+    {
+        if (string.IsNullOrWhiteSpace(columnHeader))
+            throw new ArgumentException("Column header name cannot be empty.", nameof(columnHeader));
+
+        if (employees == null || employees.Count == 0)
+            return new List<DepartmentGroup>();
+
+        var normalizedColumn = NormalizeKey(columnHeader);
+
+        // Validate that the column exists in at least one employee's RawData
+        var hasColumn = employees.Any(e => e.RawData.ContainsKey(normalizedColumn));
+        if (!hasColumn)
+        {
+            var availableColumns = employees
+                .SelectMany(e => e.RawData.Keys)
+                .Distinct()
+                .OrderBy(k => k)
+                .ToList();
+
+            throw new InvalidOperationException(
+                $"The column separator '{columnHeader}' (normalized: '{normalizedColumn}') " +
+                $"was not found in the Excel data. Available columns: [{string.Join(", ", availableColumns)}]. " +
+                "Please check the 'ColumnSeparator' value in AppConfig.json and ensure it matches " +
+                "one of the Excel column headers exactly.");
+        }
+
+        // Group employees by the raw value of the specified column
         return employees
-            .GroupBy(e => e.Department)
+            .GroupBy(e =>
+            {
+                // Try RawData first (the normalized key), then fall back to Department property
+                if (e.RawData.TryGetValue(normalizedColumn, out var value))
+                    return value;
+
+                // Fallback: try matching known properties
+                if (normalizedColumn == NormalizeKey("Payslip distribution"))
+                    return e.Department;
+
+                return "(Unknown)";
+            })
             .Select(g => new DepartmentGroup
             {
                 DepartmentName = g.Key,

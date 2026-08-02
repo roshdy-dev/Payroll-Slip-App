@@ -27,27 +27,57 @@ public class WordGeneratorService
         {
             // Try next to the executable first
             var exeDir = AppDomain.CurrentDomain.BaseDirectory;
-            var local = Path.Combine(exeDir, "Format Word.docx");
+            var local = Path.Combine(exeDir, "Word_Format.docx");
             if (File.Exists(local)) return local;
 
             // Fall back to the original project path
-            var project = @"D:\Payroll Slip App\Format Word.docx";
+            var project = @"D:\Payroll Slip App\Word_Format.docx";
             if (File.Exists(project)) return project;
 
             throw new FileNotFoundException(
-                "Word template 'Format Word.docx' not found. " +
+                "Word template 'Word_Format.docx' not found. " +
                 "Place it next to the executable or at the original project path.");
         }
     }
 
     /// <summary>
-    /// Normalized keys for fields that should display as plain integers
-    /// (no thousand separator, no decimal places).
+    /// Normalized column-name → FormatDataType, built from AppConfig.FormatDataTypes.
     /// </summary>
-    private static readonly HashSet<string> IntegerFields = new()
+    private readonly Dictionary<string, FormatDataType> _formatTypeMap;
+
+    /// <summary>Arabic month names (index 0 = January).</summary>
+    private static readonly string[] ArabicMonths =
+        { "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
+          "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر" };
+
+    /// <summary>English month names (index 0 = January).</summary>
+    private static readonly string[] EnglishMonths =
+        { "January", "February", "March", "April", "May", "June",
+          "July", "August", "September", "October", "November", "December" };
+
+    public WordGeneratorService(AppConfig config)
     {
-        "emphrcode", "oracode", "cid", "accountno", "branchcode"
-    };
+        _formatTypeMap = BuildFormatTypeMap(config);
+    }
+
+    /// <summary>
+    /// Builds a normalized lookup from FormatDataTypes for O(1) formatting decisions.
+    /// </summary>
+    private static Dictionary<string, FormatDataType> BuildFormatTypeMap(AppConfig config)
+    {
+        var map = new Dictionary<string, FormatDataType>();
+        if (config.FormatDataTypes == null) return map;
+
+        foreach (var fdt in config.FormatDataTypes)
+        {
+            if (!string.IsNullOrWhiteSpace(fdt.ColumnName))
+            {
+                var key = ExcelReaderService.NormalizeKey(fdt.ColumnName);
+                map[key] = fdt;
+            }
+        }
+        return map;
+    }
 
     public List<string> GenerateWordDocuments(List<DepartmentGroup> groups, string outputDir)
     {
@@ -61,7 +91,15 @@ public class WordGeneratorService
 
             using var doc = WordprocessingDocument.Open(path, true);
             var body = doc.MainDocumentPart!.Document.Body!;
-            var templateTable = body.Elements<Table>().First();
+
+            // Validate the template has a table
+            var tables = body.Elements<Table>().ToList();
+            if (tables.Count == 0)
+                throw new InvalidOperationException(
+                    "The Word template does not contain any table. " +
+                    "The template must have at least one table with «FieldName» placeholders.");
+
+            var templateTable = tables[0];
             var originalTableXml = templateTable.OuterXml;
 
             for (int i = 0; i < dept.Employees.Count; i++)
@@ -70,31 +108,30 @@ public class WordGeneratorService
 
                 if (i == 0)
                 {
+                    // First employee: fill the template's table in-place (preserves all formatting)
                     FillTable(templateTable, emp.RawData, emp.PayPeriod);
-                    var tp = body.Elements<Paragraph>().First(p => p.InnerText.Contains("تفاصيل الراتب"));
-                    // Replace old-style "يوليو 2026" and new-style <<Month>> <<Year>>
-                    foreach (var t in tp.Descendants<DocumentFormat.OpenXml.Wordprocessing.Text>())
-                    {
-                        t.Text = t.Text.Replace("يوليو 2026", emp.PayPeriod);
-                        t.Text = t.Text.Replace("<<Month>>", arabicMonth(emp.PayPeriod));
-                        t.Text = t.Text.Replace("<<Year>>", arabicYear(emp.PayPeriod));
-                    }
                 }
                 else
                 {
+                    // Additional employees: page break + clone the original table
+                    // The cloned table includes the title row with correct formatting —
+                    // no separate title paragraph needed (avoids formatting mismatches)
                     body.Append(new Paragraph(new Run(new Break { Type = BreakValues.Page })));
-                    body.Append(new Paragraph(
-                        new ParagraphProperties(new Justification { Val = JustificationValues.Center }),
-                        new Run(new RunProperties(
-                            new RunFonts { Ascii = "Arial", HighAnsi = "Arial" },
-                            new Bold(), new FontSize { Val = "44" }
-                        ), new Text($"تفاصيل الراتب الشهري عن شهر {emp.PayPeriod}")
-                            { Space = SpaceProcessingModeValues.Preserve })));
-                    var tc = new Table(originalTableXml);
-                    FillTable(tc, emp.RawData, emp.PayPeriod);
-                    body.Append(tc);
+                    var clonedTable = new Table(originalTableXml);
+                    FillTable(clonedTable, emp.RawData, emp.PayPeriod);
+                    body.Append(clonedTable);
                 }
             }
+
+            // ── Clean up: remove empty paragraphs from the body ──
+            // The template may have trailing empty paragraphs that cause blank pages.
+            // Page-break paragraphs are preserved.
+            var emptyParas = body.Elements<Paragraph>()
+                .Where(p => string.IsNullOrWhiteSpace(p.InnerText)
+                         && !p.Descendants<Break>().Any(b => b.Type == BreakValues.Page))
+                .ToList();
+            foreach (var ep in emptyParas)
+                ep.Remove();
 
             doc.MainDocumentPart.Document.Save();
             files.Add(path);
@@ -102,12 +139,16 @@ public class WordGeneratorService
         return files;
     }
 
-    private static void FillTable(Table table, Dictionary<string, string> rawData, string payPeriod)
+    private void FillTable(Table table, Dictionary<string, string> rawData, string payPeriod)
     {
         // Split "يوليو 2026" → month="يوليو", year="2026"
         var parts = payPeriod.Split(' ');
         var arabicMonth = parts.Length > 0 ? parts[0] : "";
         var year = parts.Length > 1 ? parts[1] : "";
+
+        // Determine the month index (0-based) from the Arabic month name
+        int monthIdx = Array.IndexOf(ArabicMonths, arabicMonth);
+        var englishMonth = monthIdx >= 0 ? EnglishMonths[monthIdx] : arabicMonth;
 
         foreach (var para in table.Descendants<Paragraph>().ToList())
         {
@@ -127,10 +168,33 @@ public class WordGeneratorService
                     continue;
                 }
 
-                // Also handle combined <<Month>> or «Month» by stripping all wrappers
+                // Strip wrappers to get the bare placeholder name
                 var txt = te.Text.Trim('<', '>', '\u00AB', '\u00BB').Trim();
+                var key = ExcelReaderService.NormalizeKey(te.Text);
 
-                // Handle Month and Year placeholders
+                // ── Check config for PayPeriod_Month / PayPeriod_Year ──
+                if (_formatTypeMap.TryGetValue(key, out var fdt))
+                {
+                    var dt = (fdt.DataType ?? "").ToLowerInvariant();
+
+                    if (dt == "payperiod_month")
+                    {
+                        var lang = (fdt.Language ?? "").Trim();
+                        te.Text = lang.Equals("English", StringComparison.OrdinalIgnoreCase)
+                            ? englishMonth : arabicMonth;
+                        te.Space = SpaceProcessingModeValues.Preserve;
+                        continue;
+                    }
+
+                    if (dt == "payperiod_year")
+                    {
+                        te.Text = year;
+                        te.Space = SpaceProcessingModeValues.Preserve;
+                        continue;
+                    }
+                }
+
+                // ── Fallback: handle Month/Year without config (backward compat) ──
                 if (txt.Equals("Month", StringComparison.OrdinalIgnoreCase))
                 {
                     te.Text = arabicMonth;
@@ -144,27 +208,78 @@ public class WordGeneratorService
                     continue;
                 }
 
-                // Normalize the field name and look up in RawData
-                var key = ExcelReaderService.NormalizeKey(te.Text);
+                // ── Normal RawData lookup with config-based formatting ──
                 if (rawData.TryGetValue(key, out var value))
                 {
-                    if (IntegerFields.Contains(key))
-                    {
-                        // Integer fields: strip decimals, no thousand separators
-                        if (decimal.TryParse(value, System.Globalization.NumberStyles.Any,
-                                System.Globalization.CultureInfo.InvariantCulture, out var id))
-                            value = ((long)id).ToString();
-                    }
-                    else if (decimal.TryParse(value, System.Globalization.NumberStyles.Any,
-                            System.Globalization.CultureInfo.InvariantCulture, out var d))
-                    {
-                        value = d.ToString("#,##0.00");
-                    }
+                    var dataType = fdt?.DataType?.ToLowerInvariant();
+                    value = FormatValue(value, dataType);
                     te.Text = string.IsNullOrWhiteSpace(value) ? "—" : value;
                     te.Space = SpaceProcessingModeValues.Preserve;
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Formats a raw value according to the configured data type.
+    /// Falls back to auto-detection: decimal → "#,##0.00", otherwise as-is.
+    /// </summary>
+    private static string FormatValue(string rawValue, string? dataType)
+    {
+        if (string.IsNullOrWhiteSpace(rawValue))
+            return "—";
+
+        switch (dataType)
+        {
+            case "integer":
+                if (decimal.TryParse(rawValue, System.Globalization.NumberStyles.Any,
+                        System.Globalization.CultureInfo.InvariantCulture, out var intVal))
+                    return ((long)intVal).ToString();
+                break;
+
+            case "decimal":
+                if (decimal.TryParse(rawValue, System.Globalization.NumberStyles.Any,
+                        System.Globalization.CultureInfo.InvariantCulture, out var decVal))
+                    return decVal.ToString("#,##0.00");
+                break;
+
+            case "date":
+                if (DateTime.TryParse(rawValue, out var dateVal))
+                    return dateVal.ToString("dd/MM/yyyy");
+                // Also try parsing as Excel serial date number
+                if (double.TryParse(rawValue, System.Globalization.NumberStyles.Any,
+                        System.Globalization.CultureInfo.InvariantCulture, out var serial)
+                    && serial > 1 && serial < 300000)
+                {
+                    var excelEpoch = new DateTime(1899, 12, 30);
+                    return excelEpoch.AddDays(serial).ToString("dd/MM/yyyy");
+                }
+                break;
+
+            case "datetime":
+                if (DateTime.TryParse(rawValue, out var dtVal))
+                    return dtVal.ToString("dd/MM/yyyy HH:mm");
+                if (double.TryParse(rawValue, System.Globalization.NumberStyles.Any,
+                        System.Globalization.CultureInfo.InvariantCulture, out var dtSerial)
+                    && dtSerial > 1 && dtSerial < 300000)
+                {
+                    var excelEpoch = new DateTime(1899, 12, 30);
+                    return excelEpoch.AddDays(dtSerial).ToString("dd/MM/yyyy HH:mm");
+                }
+                break;
+
+            case "string":
+                return rawValue;
+
+            default:
+                // No explicit type configured — auto-detect
+                if (decimal.TryParse(rawValue, System.Globalization.NumberStyles.Any,
+                        System.Globalization.CultureInfo.InvariantCulture, out var autoDec))
+                    return autoDec.ToString("#,##0.00");
+                break;
+        }
+
+        return rawValue;
     }
 
     private static string Safe(string n)
@@ -173,10 +288,4 @@ public class WordGeneratorService
         var s = new string(n.Where(c => !inv.Contains(c)).ToArray());
         return string.IsNullOrWhiteSpace(s) ? "Department" : s;
     }
-
-    private static string arabicMonth(string payPeriod) =>
-        payPeriod.Split(' ').FirstOrDefault() ?? "";
-
-    private static string arabicYear(string payPeriod) =>
-        payPeriod.Split(' ').Skip(1).FirstOrDefault() ?? "";
 }

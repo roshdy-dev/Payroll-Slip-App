@@ -1,0 +1,28 @@
+{
+  "ColumnSeparator": "Payslip distribution",
+  "FormatDataTypes": [
+    { "ColumnName": "EMP_HR_CODE", "DataType": "integer" },
+    { "ColumnName": "ORA Code", "DataType": "integer" },
+    { "ColumnName": "Basic Salary", "DataType": "decimal" },
+    { "ColumnName": "Transportation Allowance", "DataType": "decimal" },
+    { "ColumnName": "Inflation Allowance", "DataType": "decimal" },
+    { "ColumnName": "Housing Allowance", "DataType": "decimal" },
+    { "ColumnName": "Overtime Amount", "DataType": "decimal" },
+    { "ColumnName": "Social Insurance Employee Share", "DataType": "decimal" },
+    { "ColumnName": "Monthly Tax", "DataType": "decimal" },
+    { "ColumnName": "Premium", "DataType": "decimal" },
+    { "ColumnName": "NowPay", "DataType": "decimal" },
+    { "ColumnName": "Martyrs Fund", "DataType": "decimal" },
+    { "ColumnName": "Personal Loan Installment", "DataType": "decimal" },
+    { "ColumnName": "Net Salary", "DataType": "decimal" },
+    { "ColumnName": "Total Earnings", "DataType": "decimal" },
+    { "ColumnName": "Total Deductions", "DataType": "decimal" },
+    { "ColumnName": "EMP_COMPANY", "DataType": "integer" },
+    {
+      "ColumnName": "Month",
+      "DataType": "PayPeriod_Month",
+      "Language": "Arabic"
+    },
+    { "ColumnName": "Year", "DataType": "PayPeriod_Year" }
+  ]
+}
