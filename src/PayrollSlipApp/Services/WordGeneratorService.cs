@@ -150,7 +150,26 @@ public class WordGeneratorService
         int monthIdx = Array.IndexOf(ArabicMonths, arabicMonth);
         var englishMonth = monthIdx >= 0 ? EnglishMonths[monthIdx] : arabicMonth;
 
-        foreach (var para in table.Descendants<Paragraph>().ToList())
+        foreach (var row in table.Elements<TableRow>().ToList())
+        {
+            if (ShouldRemoveRow(row, rawData))
+            {
+                row.Remove();
+                continue;
+            }
+
+            FillRow(row, rawData, arabicMonth, englishMonth, year);
+        }
+    }
+
+    private void FillRow(
+        TableRow row,
+        Dictionary<string, string> rawData,
+        string arabicMonth,
+        string englishMonth,
+        string year)
+    {
+        foreach (var para in row.Descendants<Paragraph>().ToList())
         {
             para.Elements<FieldCode>().ToList().ForEach(f => f.Remove());
             para.Elements<FieldChar>().ToList().ForEach(f => f.Remove());
@@ -170,7 +189,7 @@ public class WordGeneratorService
 
                 // Strip wrappers to get the bare placeholder name
                 var txt = te.Text.Trim('<', '>', '\u00AB', '\u00BB').Trim();
-                var key = ExcelReaderService.NormalizeKey(te.Text);
+                var key = ExcelReaderService.NormalizeKey(txt);
 
                 // ── Check config for PayPeriod_Month / PayPeriod_Year ──
                 if (_formatTypeMap.TryGetValue(key, out var fdt))
@@ -218,6 +237,47 @@ public class WordGeneratorService
                 }
             }
         }
+    }
+
+    private bool ShouldRemoveRow(TableRow row, Dictionary<string, string> rawData)
+    {
+        var suppressionChecks = new List<bool>();
+
+        foreach (var text in row.Descendants<Text>())
+        {
+            var placeholder = text.Text.Trim('<', '>', '\u00AB', '\u00BB').Trim();
+            if (string.IsNullOrWhiteSpace(placeholder))
+                continue;
+
+            var key = ExcelReaderService.NormalizeKey(placeholder);
+            if (string.IsNullOrWhiteSpace(key))
+                continue;
+
+            _formatTypeMap.TryGetValue(key, out var fdt);
+            var dataType = fdt?.DataType?.ToLowerInvariant();
+
+            if (dataType == "payperiod_month" || dataType == "payperiod_year")
+                continue;
+
+            if (!rawData.TryGetValue(key, out var rawValue))
+                continue;
+
+            suppressionChecks.Add(ShouldSuppressRowValue(rawValue));
+        }
+
+        return suppressionChecks.Count > 0 && suppressionChecks.All(x => x);
+    }
+
+    private static bool ShouldSuppressRowValue(string rawValue)
+    {
+        if (string.IsNullOrWhiteSpace(rawValue))
+            return true;
+
+        return decimal.TryParse(rawValue,
+            System.Globalization.NumberStyles.Any,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out var numericValue)
+            && numericValue == 0;
     }
 
     /// <summary>
