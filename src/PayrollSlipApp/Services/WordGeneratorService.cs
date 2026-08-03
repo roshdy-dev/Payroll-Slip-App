@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
@@ -261,23 +262,9 @@ public class WordGeneratorService
     private bool ShouldRemoveRow(TableRow row, Dictionary<string, string> rawData)
     {
         var suppressionChecks = new List<bool>();
-        var hasValuePlaceholder = false;
 
-        foreach (var text in row.Descendants<Text>())
+        foreach (var placeholder in ExtractRowPlaceholders(row))
         {
-            var raw = text.Text;
-
-            // Only treat wrapped tokens (e.g. «Bonus», <<Bonus>>) as value placeholders.
-            // Plain label text (Arabic captions, titles) must never trigger row removal.
-            bool isWrapped = raw.Contains('\u00AB') || raw.Contains('\u00BB')
-                          || raw.Contains('<') || raw.Contains('>');
-            if (!isWrapped)
-                continue;
-
-            var placeholder = raw.Trim('<', '>', '\u00AB', '\u00BB').Trim();
-            if (string.IsNullOrWhiteSpace(placeholder))
-                continue;
-
             var key = ExcelReaderService.NormalizeKey(placeholder);
             if (string.IsNullOrWhiteSpace(key))
                 continue;
@@ -288,8 +275,6 @@ public class WordGeneratorService
             // Month/Year are part of the title row — never suppress that row.
             if (dataType == "payperiod_month" || dataType == "payperiod_year")
                 continue;
-
-            hasValuePlaceholder = true;
 
             // Column missing from Excel OR the cell is empty (empty cells are not
             // stored in RawData) → treat as zero/empty and remove the row.
@@ -302,9 +287,57 @@ public class WordGeneratorService
             suppressionChecks.Add(ShouldSuppressRowValue(rawValue));
         }
 
-        return hasValuePlaceholder
-            && suppressionChecks.Count > 0
-            && suppressionChecks.All(x => x);
+        return suppressionChecks.Count > 0 && suppressionChecks.All(x => x);
+    }
+
+    private static List<string> ExtractRowPlaceholders(TableRow row)
+    {
+        var placeholders = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void AddPlaceholder(string value)
+        {
+            var token = value.Trim('<', '>', '\u00AB', '\u00BB').Trim();
+            if (string.IsNullOrWhiteSpace(token))
+                return;
+
+            if (seen.Add(token))
+                placeholders.Add(token);
+        }
+
+        // Parse wrappers from full row text so placeholders split across runs
+        // (e.g., "«" + "NowPay" + "»") are still detected.
+        var rowText = row.InnerText;
+        if (!string.IsNullOrWhiteSpace(rowText))
+        {
+            var matches = Regex.Matches(
+                rowText,
+                @"«\s*(?<g1>[^»]+?)\s*»|<<\s*(?<g2>[^>]+?)\s*>>|<\s*(?<g3>[^>]+?)\s*>");
+
+            foreach (Match match in matches)
+            {
+                if (match.Groups["g1"].Success)
+                    AddPlaceholder(match.Groups["g1"].Value);
+                else if (match.Groups["g2"].Success)
+                    AddPlaceholder(match.Groups["g2"].Value);
+                else if (match.Groups["g3"].Success)
+                    AddPlaceholder(match.Groups["g3"].Value);
+            }
+        }
+
+        // Keep legacy per-text detection as a fallback for templates that
+        // include wrapped tokens inside a single text run.
+        foreach (var text in row.Descendants<Text>())
+        {
+            var raw = text.Text;
+            bool isWrapped = raw.Contains('\u00AB') || raw.Contains('\u00BB')
+                          || raw.Contains('<') || raw.Contains('>');
+
+            if (isWrapped)
+                AddPlaceholder(raw);
+        }
+
+        return placeholders;
     }
 
     private static bool ShouldSuppressRowValue(string rawValue)
@@ -312,11 +345,27 @@ public class WordGeneratorService
         if (string.IsNullOrWhiteSpace(rawValue))
             return true;
 
-        return decimal.TryParse(rawValue,
+        if (rawValue.Trim() == "—" || rawValue.Trim() == "-")
+            return true;
+
+        if (decimal.TryParse(rawValue,
             System.Globalization.NumberStyles.Any,
             System.Globalization.CultureInfo.InvariantCulture,
-            out var numericValue)
-            && numericValue == 0;
+            out var numericValueInvariant))
+            return numericValueInvariant == 0;
+
+        if (decimal.TryParse(rawValue,
+            System.Globalization.NumberStyles.Any,
+            System.Globalization.CultureInfo.CurrentCulture,
+            out var numericValueCurrent))
+            return numericValueCurrent == 0;
+
+        var compact = rawValue.Replace(",", string.Empty).Trim();
+        return decimal.TryParse(compact,
+            System.Globalization.NumberStyles.Any,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out var numericValueCompact)
+            && numericValueCompact == 0;
     }
 
     /// <summary>
